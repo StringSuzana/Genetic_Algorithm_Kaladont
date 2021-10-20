@@ -10,20 +10,23 @@ import math
 import matplotlib.pyplot as plt
 from pandas import DataFrame
 
+POPULATION_LIMIT = 50
 GAME_OVER = False
 Word = pd.Series
 WordsTable = pd.DataFrame
 WordsGenome = WordsTable
+WordsPopulation = [WordsTable]
+last_word: Word
 
-def generate_genome_words(size: int, words_table: WordsTable, word: Word) -> WordsGenome:
+
+def generate_genome_words(size: int, words_table: WordsTable, last_used_word: Word) -> WordsGenome:
     # generate a chain of size elements
     df_accepted: WordsTable
     data = []
-    last_selected_word = [str(word.last_two_letters)]
+    last_selected_word = [str(last_used_word.last_two_letters)]
     print(last_selected_word)
 
     for i in range(size):
-        print(f"last two letters: {last_selected_word[i]}")
         current_word_group = words_table.loc[(words_table['first_two_letters'] == last_selected_word[i])]
 
         preferred_group: WordsTable = current_word_group.loc[(
@@ -60,10 +63,10 @@ def generate_genome_words(size: int, words_table: WordsTable, word: Word) -> Wor
     # <<< or the chain could not be finished  | (len(df_accepted[df_accepted.duplicated()]) > 0) >>>
     # <<< or the length is smaller than expected, re-do the method | (len(df_accepted) != size) >>>
     if data[len(data) - 1].can_connect_with.values[0] <= 0:
-        generate_genome_words(size, words_table, word)
+        generate_genome_words(size, words_table, last_used_word)
 
     # print_genome_info(df_accepted)
-    get_fitness_score_for_words(df_accepted, size)
+    # get_fitness_score_for_words(df_accepted, size)
 
     return df_accepted
 
@@ -71,6 +74,11 @@ def generate_genome_words(size: int, words_table: WordsTable, word: Word) -> Wor
 def print_genome_info(words_genome: WordsGenome):
     print(f"length of words_genome {len(words_genome)}")
     print(f"last word is \n {words_genome.tail(1).loc[:, ['word', 'last_two_letters', 'can_connect_with']]}")
+
+
+def generate_population_words(population_limit: int, genome_size: int, words_table: WordsTable,
+                              last_used_word: Word) -> WordsPopulation:
+    return [generate_genome_words(genome_size, words_table, last_used_word) for _ in range(population_limit)]
 
 
 def get_fitness_score_for_words(words_genome: WordsGenome, wanted_size: int):
@@ -92,7 +100,7 @@ def get_fitness_score_for_words(words_genome: WordsGenome, wanted_size: int):
 
     final_fitness_score = std_score * size_fitness_score * continue_fitness
     print(f"Fitness = {final_fitness_score}")
-    plot_fitness(words_genome)
+    # plot_fitness(words_genome)
     return final_fitness_score
 
 
@@ -102,7 +110,7 @@ def plot_fitness(words_genome):
     y_value_connecting = words_genome['can_connect_with']
 
     plt.plot(x_value, y_value_ending,
-         label='words_with_same_ending')
+             label='words_with_same_ending')
     plt.plot(x_value, y_value_connecting, label='can_connect_with')
 
     plt.title("fitness")
@@ -110,42 +118,6 @@ def plot_fitness(words_genome):
     plt.ylabel('Number')
     plt.legend()
     plt.show()
-
-
-
-def first_approach() -> DataFrame:
-    words_table = pd.read_csv('words.csv')
-
-    first_two_letters = words_table.loc[0:, 'word'].str[:2:]
-    last_two_letters = words_table.loc[0:, 'word'].str[::-1].str[:2:].str[::-1]
-
-    words_table['first_two_letters'] = first_two_letters
-    words_table['last_two_letters'] = last_two_letters
-    words_table['words_with_same_start'] = 1
-    words_table['words_with_same_ending'] = 1
-    words_table['can_connect_with'] = 0
-    words_table['is_used'] = False
-
-    gr_start = words_table.groupby(['first_two_letters'])[['first_two_letters', 'last_two_letters']]
-    all_starting_letters = gr_start.first()['first_two_letters']  # This is Series
-
-    for w in all_starting_letters:
-        filter_words = words_table[words_table["first_two_letters"] == w]
-        words_table.loc[words_table["first_two_letters"] == w, 'words_with_same_start'] = len(filter_words)
-
-    gr_end = words_table.groupby(['last_two_letters'])[['first_two_letters', 'last_two_letters']]
-    all_ending_letters = gr_end.first()['last_two_letters']  # This is Series
-
-    for w in all_ending_letters:
-        all_first_two_same = words_table[words_table["first_two_letters"] == w]
-        words_table.loc[words_table["last_two_letters"] == w, 'can_connect_with'] = len(all_first_two_same)
-        words_table.loc[words_table["last_two_letters"] == w, 'words_with_same_ending'] = len(
-            words_table[words_table["last_two_letters"] == w])
-
-    sum_of_game_ending_words = len(words_table[words_table['can_connect_with'] == 0])
-    # words_table.to_csv("words_filled.csv")
-
-    return words_table
 
 
 def plot_each_letters_group(words_table):
@@ -168,9 +140,46 @@ def plot_each_letters_group(words_table):
         plt.show()
 
 
+def single_point_crossover(a: WordsGenome, b: WordsGenome) -> Tuple[WordsGenome, WordsGenome]:
+    # check if crossover is possible
+    cutting_places = (
+        a.loc[:, 'first_two_letters'].isin(b.first_two_letters))
+    word_chosen_from_a = a[cutting_places].sample(1)
+    cutting_a_at_index = word_chosen_from_a.index[0]
+
+    first_part_a: DataFrame = a.loc[:cutting_a_at_index, :]
+    first_part_a.iloc[:-1, :]  # remove the last word because it will be included in the next line
+
+    second_part_a = a.loc[cutting_a_at_index:, :]
+
+    cutting_b_at_index = b.loc[(b["first_two_letters"] == a.loc[cutting_a_at_index].first_two_letters)].index[0]
+    first_part_b: DataFrame = b.loc[:cutting_b_at_index, :]
+    first_part_b.iloc[:-1, :]
+    second_part_b = b.loc[cutting_b_at_index:, :]
+
+    a_b = first_part_a.append(second_part_b)
+    b_a = first_part_b.append(second_part_a)
+
+    return a_b, b_a
+
+
+def run_evolution(population_limit: int, genome_size: int, words_table: WordsTable,
+                  last_used_word: Word):
+    population = generate_population_words(population_limit, genome_size, words_table, last_used_word)
+    genome_sum = population_limit * genome_size
+    for i in range(genome_sum):
+        population = sorted(
+            population,
+            key=lambda genome: get_fitness_score_for_words(genome, wanted_size=genome_size),
+            reverse=True
+        )
+        both = single_point_crossover(population[0], population[1])
+        print(population)
+    pass
 
 
 if __name__ == '__main__':
     df_words = pd.read_csv('words_filled.csv')
     last_word: Word = df_words.loc[16, :]
+    run_evolution(10, 50, df_words, last_word)
     generate_genome_words(50, df_words, last_word)

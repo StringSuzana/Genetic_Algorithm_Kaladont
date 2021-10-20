@@ -136,3 +136,7 @@ def put_in_main_func_genetic():
     )
     print(f"number of generations: {generations}")
     print(f"Best solution: {genome_to_things(population[0], things)}")
+
+
+if __name__ == '__main__':
+    put_in_main_func_genetic()
