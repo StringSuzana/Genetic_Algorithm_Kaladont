@@ -116,26 +116,6 @@ def plot_fitness(words_genome):
     plt.show()
 
 
-def plot_each_letters_group(words_table):
-    gr_start = words_table.groupby(['first_two_letters'])[['first_two_letters', 'last_two_letters']]
-    all_starting_letters = gr_start.first()['first_two_letters']  # This is Series
-
-    for w in all_starting_letters:
-        x_value = range(len(words_table[words_table["first_two_letters"] == w]))
-        y_value_ending = words_table[words_table["first_two_letters"] == w]['words_with_same_ending']
-        y_value_connecting = words_table[words_table["first_two_letters"] == w]['can_connect_with']
-
-        plt.plot(words_table[words_table["first_two_letters"] == w].index, y_value_ending,
-                 label='words_with_same_ending')
-        plt.plot(words_table[words_table["first_two_letters"] == w].index, y_value_connecting, label='can_connect_with')
-
-        plt.title(w)
-        plt.xlabel('All words')
-        plt.ylabel('Number')
-        plt.legend()
-        plt.show()
-
-
 def single_point_crossover(a: WordsGenome, b: WordsGenome) -> Tuple[WordsGenome, WordsGenome]:
     # check if crossover is possible
     cutting_places = (
@@ -168,9 +148,9 @@ def run_evolution(population_limit: int,  # How many chains
                   genome_size: int,  # How many words are in a chain of words
                   words_table: WordsTable,
                   last_used_word: Word,
-                  generation_limit: int = 20,
-                  fitness_limit: int = 2.6):  # generation limit is how many times the foor loop is mutating and
-    # searching for the chain with best fitness
+                  generation_limit: int = 20,  # generation limit is how many times the foor loop is mutating and
+                  # searching for the chain with best fitnesss
+                  fitness_limit: int = 2.8):
     population = generate_population_words(population_limit, genome_size, words_table, last_used_word)
     i: int = 0
     for i in range(generation_limit):
@@ -200,7 +180,7 @@ def run_evolution(population_limit: int,  # How many chains
         key=lambda genome: get_fitness_score_for_genome(genome, wanted_genome_size=genome_size),
         reverse=True
     )
-    return population, (i+1)
+    return population[0], (i + 1)  # return best fitted genome and number of number_of_generations
 
 
 def selection_pair(population: WordsPopulation, wanted_genome_size: int) -> WordsPopulation:
@@ -210,8 +190,30 @@ def selection_pair(population: WordsPopulation, wanted_genome_size: int) -> Word
 
 
 if __name__ == '__main__':
-    df_words = pd.read_csv('words_filled.csv')
+    df_all_words = pd.read_csv('words_filled.csv')
+
+    df_words = df_all_words
     last_word: Word = df_words.loc[16, :]
-    population, generations = run_evolution(10, 50, df_words, last_word)
-    print(f"number of generations: {generations}")
-    print(f"Best solution: {population[0]}")
+
+    while (GAME_OVER != True):
+        best_genome, number_of_generations = run_evolution(population_limit=10,
+                                                           genome_size=40,
+                                                           words_table=df_words,
+                                                           last_used_word=last_word)
+        last_word = best_genome.iloc[(len(best_genome) - 1)]
+
+        # Umanjit df_words za listu populacije
+        rows_to_keep = [x for x in df_words.index if x not in best_genome.index]
+        df_words = df_words.loc[rows_to_keep, :]
+
+        gr_end = best_genome.groupby(['last_two_letters'])[['first_two_letters', 'last_two_letters']]
+        all_ending_letters = gr_end.first()['last_two_letters']  # This is Series
+
+        for w in all_ending_letters:
+            all_first_two_same = df_words[df_words["first_two_letters"] == w]
+            df_words.loc[df_words["last_two_letters"] == w, 'can_connect_with'] = len(all_first_two_same)
+            df_words.loc[df_words["last_two_letters"] == w, 'words_with_same_ending'] = len(
+                df_words[df_words["last_two_letters"] == w])
+
+        print(f"number of generations: {number_of_generations}")
+        print(f"Best solution: {best_genome}")
